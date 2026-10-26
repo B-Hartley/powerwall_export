@@ -1,0 +1,87 @@
+blueprint:
+  name: Powerwall Export - test next joined Octopus Saving Session
+  description: >-
+    Reads the next joined Power Down/Saving Session calendar event in the next
+    36 hours. Defaults to read-only preview. Explicitly enable Write to Powerwall
+    to upload the prepared tariff. Do not choose a Power Up calendar.
+  domain: script
+  homeassistant:
+    min_version: 2026.9.1
+  input:
+    session_calendar:
+      name: Joined Power Down / Saving Sessions calendar
+      selector:
+        entity:
+          filter:
+            - domain: calendar
+    powerwall_connection:
+      name: Powerwall Export connection
+      selector:
+        config_entry:
+          integration: powerwall_export
+    write_to_powerwall:
+      name: Write to Powerwall (otherwise preview only)
+      default: false
+      selector:
+        boolean:
+sequence:
+  - variables:
+      calendar_entity: !input session_calendar
+      export_connection: !input powerwall_connection
+      do_write: !input write_to_powerwall
+  - action: calendar.get_events
+    target:
+      entity_id: !input session_calendar
+    data:
+      start_date_time: "{{ now().isoformat() }}"
+      end_date_time: "{{ (now() + timedelta(hours=36)).isoformat() }}"
+    response_variable: octopus_events
+  - variables:
+      next_start: >-
+        {% set ns = namespace(value='') %}
+        {% for e in octopus_events.get(calendar_entity, {}).get('events', []) | sort(attribute='start') %}
+          {% if ns.value == '' and as_timestamp(e.start, 0) >= as_timestamp(now()) + 600 %}
+            {% set ns.value = e.start %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.value }}
+      next_end: >-
+        {% set ns = namespace(value='') %}
+        {% for e in octopus_events.get(calendar_entity, {}).get('events', []) | sort(attribute='start') %}
+          {% if ns.value == '' and as_timestamp(e.start, 0) >= as_timestamp(now()) + 600 %}
+            {% set ns.value = e.end %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.value }}
+      next_title: >-
+        {% set ns = namespace(value='') %}
+        {% for e in octopus_events.get(calendar_entity, {}).get('events', []) | sort(attribute='start') %}
+          {% if ns.value == '' and as_timestamp(e.start, 0) >= as_timestamp(now()) + 600 %}
+            {% set ns.value = e.summary | default('Saving Session') %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.value }}
+  - choose:
+      - conditions: "{{ next_start | trim != '' and next_end | trim != '' }}"
+        sequence:
+          - action: powerwall_export.prepare_session
+            data:
+              config_entry_id: "{{ export_connection }}"
+              start_time: "{{ next_start | trim }}"
+              end_time: "{{ next_end | trim }}"
+              dry_run: "{{ not do_write }}"
+            response_variable: preparation_result
+          - action: persistent_notification.create
+            data:
+              title: "Powerwall session: {{ 'WRITTEN' if do_write else 'PREVIEW ONLY' }}"
+              message: >-
+                {{ next_title | trim }} — {{ next_start | trim }} to {{ next_end | trim }}.
+                {{ preparation_result | to_json }}
+    default:
+      - action: persistent_notification.create
+        data:
+          title: "Powerwall session: no upcoming joined event"
+          message: >-
+            No future joined event was returned within 36 hours by
+            {{ calendar_entity }}. No Powerwall changes were made.
+mode: single

@@ -1,0 +1,18 @@
+{
+  "domain": "powerwall_export",
+  "name": "Powerwall Export",
+  "version": "0.1.6",
+  "config_flow": true,
+  "after_dependencies": [
+    "tessie",
+    "tesla_fleet"
+  ],
+  "dependencies": [
+    "persistent_notification"
+  ],
+  "codeowners": [],
+  "documentation": "https://developer.tesla.com/docs/fleet-api/endpoints/energy",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "requirements": []
+}

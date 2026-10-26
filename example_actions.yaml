@@ -1,0 +1,25 @@
+# Reference examples only. The action UI lets you pick this connection without
+# manually looking up its ID. These are separate actions, NOT one sequence.
+#
+# Read-only setup check:
+# action: powerwall_export.check_setup
+# data:
+#   config_entry_id: YOUR_POWERWALL_EXPORT_CONFIG_ENTRY_ID
+#
+# Five-minute supervised test, unchanged reserve:
+# action: powerwall_export.start_export
+# data:
+#   config_entry_id: YOUR_POWERWALL_EXPORT_CONFIG_ENTRY_ID
+#   duration_minutes: 5
+#
+# Sixty-minute session with a temporary 10% reserve:
+# action: powerwall_export.start_export
+# data:
+#   config_entry_id: YOUR_POWERWALL_EXPORT_CONFIG_ENTRY_ID
+#   duration_minutes: 60
+#   reserve_percent: 10
+#
+# Manual stop and restoration:
+# action: powerwall_export.stop_export
+# data:
+#   config_entry_id: YOUR_POWERWALL_EXPORT_CONFIG_ENTRY_ID

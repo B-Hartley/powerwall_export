@@ -1,0 +1,68 @@
+blueprint:
+  name: Powerwall Export - joined Octopus Saving Session
+  description: >-
+    Request export during a joined BottlecapDave Power Down/Saving Session.
+    Choose the Power Down (or older Saving Sessions) calendar, NOT Power Up/free
+    electricity. Powerwall Export must first pass a supervised manual test.
+    The integration saves/restores settings and uses the event's end time.
+    It does not join sessions, restart a session after a HA reboot, or guarantee
+    export power/payment. Stop overlapping Powerwall tariff writers first.
+  domain: automation
+  homeassistant:
+    min_version: 2026.9.1
+  input:
+    session_calendar:
+      name: Octopus joined Power Down / Saving Sessions calendar
+      selector:
+        entity:
+          filter:
+            - domain: calendar
+    powerwall_connection:
+      name: Powerwall Export connection
+      selector:
+        config_entry:
+          integration: powerwall_export
+    override_reserve:
+      name: Override backup reserve during the session
+      description: Leave off to keep your existing reserve.
+      default: false
+      selector:
+        boolean:
+    reserve_percent:
+      name: Temporary reserve when override is enabled
+      description: The original reserve is restored afterwards. A lower reserve leaves less outage protection.
+      default: 20
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: '%'
+          mode: box
+triggers:
+  - trigger: calendar
+    entity_id: !input session_calendar
+    event: start
+variables:
+  use_override: !input override_reserve
+conditions:
+  - condition: template
+    value_template: >-
+      {{ trigger.calendar_event is defined
+         and as_timestamp(trigger.calendar_event.end, 0) > as_timestamp(now()) + 120 }}
+actions:
+  - choose:
+      - conditions: '{{ use_override }}'
+        sequence:
+          - action: powerwall_export.start_export
+            data:
+              config_entry_id: !input powerwall_connection
+              end_time: '{{ trigger.calendar_event.end }}'
+              reserve_percent: !input reserve_percent
+    default:
+      - action: powerwall_export.start_export
+        data:
+          config_entry_id: !input powerwall_connection
+          end_time: '{{ trigger.calendar_event.end }}'
+mode: single
+max_exceeded: warning

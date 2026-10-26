@@ -1,0 +1,81 @@
+check_setup:
+  name: Check setup (read only)
+  description: Read settings, tariff and live status without changing the Powerwall. Does not prove write permission.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: powerwall_export
+start_export:
+  name: Start timed export
+  description: Save current settings, apply a temporary export tariff and restore afterwards. This requests optimiser-driven export, not a guaranteed power level.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: powerwall_export
+    duration_minutes:
+      default: 30
+      selector:
+        number:
+          min: 5
+          max: 360
+          step: 1
+          unit_of_measurement: min
+          mode: box
+    reserve_percent:
+      description: Leave disabled/omitted to keep the existing reserve. An explicit value is temporary and restored afterwards.
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: '%'
+          mode: box
+    end_time:
+      description: Optional ISO timestamp with UTC offset or Z, normally supplied by the Octopus blueprint. Overrides duration. Rounded down to the minute.
+      selector:
+        text:
+stop_export:
+  name: Stop and restore
+  description: Restore the saved tariff and changed settings, and verify them. A failed restore retains the snapshot and retries automatically.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: powerwall_export
+
+prepare_session:
+  name: Prepare future Saving Session (test)
+  description: Preview by default. Optionally write a future tariff window; preserves Savings mode, reserve and grid charging. Restore at end.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: powerwall_export
+    start_time:
+      required: true
+      selector:
+        text:
+    end_time:
+      required: true
+      selector:
+        text:
+    dry_run:
+      default: true
+      selector:
+        boolean:
+
+get_tariff:
+  name: Get current tariff (read only)
+  description: Returns current Powerwall buy and sell tariff including raw weekday periods; does not write settings or expose tokens. Select Response in Developer Tools to copy.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: powerwall_export

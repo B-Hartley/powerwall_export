@@ -1,0 +1,13 @@
+{
+  "services": {
+    "check_setup": {
+      "service": "mdi:clipboard-check-outline"
+    },
+    "start_export": {
+      "service": "mdi:battery-arrow-up"
+    },
+    "stop_export": {
+      "service": "mdi:restore"
+    }
+  }
+}
