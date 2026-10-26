@@ -286,6 +286,39 @@ class Engine:
                 await self.sleep(3)
         raise ExportError(last)
 
+    async def reconcile_recovery(self) -> dict:
+        """Read-only recovery inspection; never clear or overwrite a snapshot."""
+        async with self.lock:
+            if not self.snapshot:
+                return {"pending": False, "message": "No recovery snapshot exists."}
+            snap = self.snapshot
+            original = snap["tariff"]
+            current = normalize_tariff(await self.api.tariff())
+            expected = normalize_tariff(original)
+            current_info = settings(await self.api.info())
+            differences = {}
+            # Show exact safe mismatch categories without exposing a full site ID.
+            for side_name, left, right in (
+                ("buy", current, expected),
+                ("sell", current["sell_tariff"], expected["sell_tariff"]),
+            ):
+                for key in ("currency", "seasons", "energy_charges", "demand_charges",
+                            "daily_charges", "daily_demand_charges", "monthly_charges",
+                            "monthly_minimum_bill", "min_applicable_demand", "max_applicable_demand"):
+                    if left.get(key) != right.get(key):
+                        differences[f"{side_name}.{key}"] = {
+                            "current": left.get(key), "saved": right.get(key)
+                        }
+            return {
+                "pending": True,
+                "current_tariff_name": current.get("name"),
+                "saved_tariff_name": expected.get("name"),
+                "tariff_matches": tariff_matches(current, expected),
+                "operating_settings_match": current_info == snap["original"],
+                "differences": differences,
+                "read_only": True,
+            }
+
     async def stop(self, reason: str = "manual stop") -> dict:
         async with self.lock:
             if not self.snapshot:
@@ -305,17 +338,21 @@ class Engine:
             # Never touch mode, grid charging or reserve for an advance-only session.
             tariff_ok = False
             try:
-                await self.api.set_tariff(tariff)
-                for attempt in range(4):
-                    if tariff_matches(await self.api.tariff(), tariff):
-                        tariff_ok = True
-                        break
-                    if attempt < 3:
-                        await self.sleep(3)
+                # Avoid repeated writes when the original tariff is already
+                # present. Tesla can normalise its returned tariff representation.
+                tariff_ok = tariff_matches(await self.api.tariff(), tariff)
+                if not tariff_ok:
+                    await self.api.set_tariff(tariff)
+                    for attempt in range(4):
+                        if tariff_matches(await self.api.tariff(), tariff):
+                            tariff_ok = True
+                            break
+                        if attempt < 3:
+                            await self.sleep(3)
             except Exception:
                 pass
             if not tariff_ok:
-                failures.append("original tariff read-back")
+                failures.append("original tariff read-back; use reconcile_recovery diagnostics")
             else:
                 try:
                     if settings(await self.api.info()) != original:
