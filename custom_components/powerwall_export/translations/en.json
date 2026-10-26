@@ -1,0 +1,68 @@
+{
+  "title": "Powerwall Export",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Reuse an existing Powerwall connection",
+        "description": "Choose your Powerwall energy site via Tessie (preferred) or Tesla Fleet. No new credentials are needed. Do not add the same physical site twice. This experimental companion has not been tested on your hardware. Installing it alone does not initiate export. Keep other Powerwall control automations disabled during tests.",
+        "data": {
+          "source": "Existing authenticated energy site",
+          "time_zone": "Powerwall time zone (normally Europe/London)"
+        }
+      }
+    },
+    "abort": {
+      "no_energy_sites": "No loaded energy sites found. Your Powerwall, not just your car, must appear in Tessie or Tesla Fleet with energy-data permission. Reload that integration and try again.",
+      "already_configured": "A controller for this physical energy site already exists."
+    },
+    "error": {
+      "source_unavailable": "The chosen connection is no longer loaded.",
+      "invalid_time_zone": "Enter a valid time zone, such as Europe/London.",
+      "time_zone_mismatch": "This differs from the Powerwall installation time zone."
+    }
+  },
+  "services": {
+    "check_setup": {
+      "name": "Check setup (read only)",
+      "description": "Read settings, tariff and live status without changing the Powerwall. Does not prove write permission.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Powerwall Export connection",
+          "description": ""
+        }
+      }
+    },
+    "start_export": {
+      "name": "Start timed export",
+      "description": "Save current settings, apply a temporary export tariff and restore afterwards. This requests optimiser-driven export, not a guaranteed power level.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Powerwall Export connection",
+          "description": ""
+        },
+        "duration_minutes": {
+          "name": "Duration",
+          "description": ""
+        },
+        "reserve_percent": {
+          "name": "Temporary backup reserve (optional)",
+          "description": "Leave disabled/omitted to keep the existing reserve. An explicit value is temporary and restored afterwards."
+        },
+        "end_time": {
+          "name": "End time (optional)",
+          "description": "Optional ISO timestamp with UTC offset or Z, normally supplied by the Octopus blueprint. Overrides duration. Rounded down to the minute."
+        }
+      }
+    },
+    "stop_export": {
+      "name": "Stop and restore",
+      "description": "Restore the saved tariff and changed settings, and verify them. A failed restore retains the snapshot and retries automatically.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Powerwall Export connection",
+          "description": ""
+        }
+      }
+    }
+  }
+}

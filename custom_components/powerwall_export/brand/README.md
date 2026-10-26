@@ -1,0 +1,1 @@
+Custom Powerwall Export branding assets. Brand art is original, unofficial, and is not Tesla or Octopus branding. Home Assistant core UI may show default branding until an external brand registry is configured.
