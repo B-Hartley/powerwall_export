@@ -89,6 +89,8 @@ class Runtime:
 
     async def run(self, action: str, **kwargs):
         try:
+            if action == "confirm_recovery":
+                return await self.engine.confirm_recovery()
             if action == "reconcile_recovery":
                 return await self.engine.reconcile_recovery()
             if action == "get_tariff":
