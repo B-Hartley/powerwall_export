@@ -89,6 +89,8 @@ class Runtime:
 
     async def run(self, action: str, **kwargs):
         try:
+            if action == "reconcile_recovery":
+                return await self.engine.reconcile_recovery()
             if action == "get_tariff":
                 # Existing Tessie/Fleet authenticated client; never writes settings.
                 from .tariff import extract_tariff
