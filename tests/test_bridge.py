@@ -66,12 +66,13 @@ async def test_tariff_rate_uses_parent_request_auth(bridge):
 
 
 @pytest.mark.asyncio
-async def test_embedded_tariff_avoids_fallback_get(bridge):
+async def test_embedded_tariff_does_not_override_live_get(bridge):
     module,state=bridge
     hass,entry,site,api,entries=make_hass(state)
     client=module.SharedClient(hass,'parent','123456')
-    await client.tariff({'tou_settings':{'tariff_content_v2':base_tariff()}})
-    api._request.assert_not_awaited()
+    embedded={'tou_settings':{'tariff_content_v2':{'seasons':{'broken':{}},'energy_charges':{'broken':{}}}}}
+    assert await client.tariff(embedded)==base_tariff()
+    api._request.assert_awaited_once_with('GET','api/1/energy_sites/123456/tariff_rate')
 
 
 @pytest.mark.asyncio
