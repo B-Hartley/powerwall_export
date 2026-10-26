@@ -118,13 +118,11 @@ class SharedClient:
         return self._read_response(await self._call("live_status"))
 
     async def tariff(self, info: dict | None = None) -> dict:
-        if info is not None:
-            try:
-                return extract_tariff(info)
-            except ExportError:
-                pass
-        # Not a documented stable Fleet endpoint. Used by existing Powerwall
-        # clients; absence is fatal to starting, not permission to guess a tariff.
+        # Always read the same tariff_rate representation used by Get current
+        # tariff. Embedded site_info sometimes has a different/partial season
+        # schema, causing setup checks to reject a tariff that diagnostics can
+        # read. Never substitute an unverified cached tariff for a live read.
+        # This remains an undocumented endpoint: fail closed if unavailable.
         from tesla_fleet_api.const import Method
         response = await self._call("_request", Method.GET, f"api/1/energy_sites/{self.site_id}/tariff_rate")
         return extract_tariff(self._read_response(response))
