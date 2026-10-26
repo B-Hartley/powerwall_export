@@ -79,3 +79,13 @@ get_tariff:
       selector:
         config_entry:
           integration: powerwall_export
+
+reconcile_recovery:
+  name: Diagnose pending recovery (read only)
+  description: Compare live tariff and operating settings against the saved recovery snapshot. Makes no writes or changes.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: powerwall_export
