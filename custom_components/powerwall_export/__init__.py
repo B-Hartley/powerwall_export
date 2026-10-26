@@ -49,7 +49,7 @@ async def async_setup(hass, config):
         result = await runtime.run(call.service, **kwargs)
         return result if call.return_response else None
 
-    for name in ("check_setup", "start_export", "stop_export", "prepare_session", "get_tariff", "reconcile_recovery"):
+    for name in ("check_setup", "start_export", "stop_export", "prepare_session", "get_tariff", "reconcile_recovery", "confirm_recovery"):
         hass.services.async_register(DOMAIN, name, handle,
                                      schema=START_SCHEMA if name == "start_export" else PREPARE_SCHEMA if name == "prepare_session" else vol.Schema(BASE),
                                      supports_response=SupportsResponse.OPTIONAL)
