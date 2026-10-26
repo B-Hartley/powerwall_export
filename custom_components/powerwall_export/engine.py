@@ -319,6 +319,30 @@ class Engine:
                 "read_only": True,
             }
 
+    async def confirm_recovery(self) -> dict:
+        """Complete recovery WITHOUT a write, but only on exact verified agreement."""
+        async with self.lock:
+            if not self.snapshot:
+                return {"restored": True, "message": "No pending recovery."}
+            saved = self.snapshot
+            actual = await self.api.tariff()
+            info = settings(await self.api.info())
+            if not tariff_matches(actual, saved["tariff"]):
+                raise ExportError("Cannot clear recovery: current tariff does not match the saved original. Run Diagnose pending recovery first.")
+            if info != saved["original"]:
+                raise ExportError("Cannot clear recovery: operating settings differ from saved original.")
+            previous_archive = self.last_snapshot
+            self.last_snapshot = {**saved, "restored_at": self.now().isoformat(), "restore_reason": "verified without write"}
+            self.snapshot = None
+            try:
+                await self._persist()
+            except Exception:
+                self.snapshot, self.last_snapshot = saved, previous_archive
+                raise ExportError("Could not save recovery completion. Snapshot retained.") from None
+            self.retry_count = 0
+            self._state("idle", "Recovery verified read-only; original tariff and settings match snapshot.")
+            return {"restored": True, "written": False}
+
     async def stop(self, reason: str = "manual stop") -> dict:
         async with self.lock:
             if not self.snapshot:
