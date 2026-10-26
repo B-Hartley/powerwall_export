@@ -89,3 +89,13 @@ reconcile_recovery:
       selector:
         config_entry:
           integration: powerwall_export
+
+confirm_recovery:
+  name: Complete verified recovery (no tariff write)
+  description: Clears pending recovery only if the live tariff and all saved operating settings match exactly. Makes no Powerwall changes.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: powerwall_export
