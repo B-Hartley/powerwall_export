@@ -89,6 +89,10 @@ class Runtime:
 
     async def run(self, action: str, **kwargs):
         try:
+            if action == "probe_tariff_write":
+                if self.hass.state is not CoreState.running:
+                    raise ExportError("Home Assistant must be running for a tariff write test.")
+                return await self.engine.probe_tariff_write(**kwargs)
             if action == "confirm_recovery":
                 return await self.engine.confirm_recovery()
             if action == "reconcile_recovery":
