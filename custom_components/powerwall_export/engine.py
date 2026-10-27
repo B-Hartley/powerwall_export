@@ -210,6 +210,86 @@ class Engine:
                 restored = await self._restore_unlocked("preparation failed")
                 raise ExportError("Preparation failed. " + ("Original tariff restored." if restored else "Restoration pending; check Tesla app.")) from exc
 
+    async def probe_tariff_write(self, dry_run: bool = True) -> dict:
+        """Test a one-minute 05:30 boundary shift; restore within three minutes.
+
+        Tariff-only: never alter operational mode, grid charging or reserve.
+        """
+        async with self.lock:
+            if self.snapshot:
+                raise ExportError("Recovery is pending; tariff write test refused.")
+            now = self.now()
+            info, original, tariff, live = await self._read()
+            if original["mode"] != "autonomous":
+                raise ExportError("Write test requires Savings mode.")
+            if live.get("grid_status") != "Active":
+                raise ExportError("Grid is not confirmed active.")
+            if live.get("storm_mode_active") is True or live.get("grid_services_active") is True:
+                raise ExportError("Active grid service or Storm Watch blocks the test.")
+            proposed = deepcopy(tariff)
+            changes = {}
+            for side_label, side in (("buy", proposed), ("sell", proposed["sell_tariff"])):
+                changed = 0
+                for season_name, season in side["seasons"].items():
+                    blocks = season.get("tou_periods", {})
+                    if not blocks:
+                        continue  # Tesla's empty Winter placeholder
+                    shifts = []
+                    for label, block in blocks.items():
+                        for period in block.get("periods", []):
+                            if (period.get("fromHour"), period.get("fromMinute")) == (5, 30):
+                                shifts.append((period, "fromMinute"))
+                            if (period.get("toHour"), period.get("toMinute")) == (5, 30):
+                                shifts.append((period, "toMinute"))
+                    if len(shifts) != 2:
+                        raise ExportError("Expected exactly two matching 05:30 boundaries per active season. No write.")
+                    for period, field in shifts:
+                        period[field] = 31
+                    changes[side_label + "." + season_name] = len(shifts)
+                    changed += 1
+                if not changed:
+                    raise ExportError("No active tariff season found. No write.")
+            if tariff_matches(proposed, tariff):
+                raise ExportError("One-minute tariff test did not change the schedule.")
+            result = {"dry_run": bool(dry_run), "written": False,
+                      "boundary": "05:30 -> 05:31", "changed": changes,
+                      "original_tariff": tariff.get("name"), "restoration_deadline": (now + timedelta(minutes=3)).isoformat()}
+            if dry_run:
+                return result
+            snap = {"schema": 1, "site_id": self.site_id, "started_at": now.isoformat(),
+                    "end_at": (now + timedelta(minutes=3)).isoformat(),
+                    "original": original, "tariff": tariff, "temporary_tariff": proposed,
+                    "target_reserve": original["reserve"], "override_reserve": False,
+                    "time_zone": self.time_zone, "tariff_only": True,
+                    "event_start_at": now.isoformat()}
+            self.snapshot = snap
+            try:
+                await self._persist()
+            except Exception:
+                self.snapshot = None
+                raise ExportError("Recovery journal could not be saved. No write.") from None
+            self._state("starting", "Saved original tariff. Testing one-minute tariff write.")
+            stage = "write"
+            try:
+                await self.api.set_tariff(proposed)
+                stage = "read-back"
+                for attempt in range(4):
+                    if tariff_matches(await self.api.tariff(), proposed):
+                        stage = "operating settings"
+                        if settings(await self.api.info()) != original:
+                            raise ExportError("Operating settings changed unexpectedly.")
+                        self._state("prepared", "One-minute test tariff accepted. Automatic restoration scheduled in three minutes.")
+                        result.update({"written": True, "dry_run": False, "write_acknowledged": True})
+                        return result
+                    if attempt < 3:
+                        await self.sleep(3)
+                raise ExportError("Tesla did not return the proposed tariff after the write.")
+            except (Exception, asyncio.CancelledError) as exc:
+                self._state("restore_pending", "Tariff write probe failed at " + stage + "; restoring saved original.")
+                restored = await self._restore_unlocked("tariff write probe failed")
+                raise ExportError("Tariff write probe failed at " + stage + " (" + type(exc).__name__ +
+                                  "). " + ("Original confirmed restored." if restored else "Recovery pending; run Diagnose pending recovery.")) from None
+
     async def start(self, duration_minutes: int = 30, reserve_percent: float | None = None,
                     end_time: datetime | None = None) -> dict:
         async with self.lock:
