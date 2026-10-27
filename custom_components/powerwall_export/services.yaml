@@ -99,3 +99,17 @@ confirm_recovery:
       selector:
         config_entry:
           integration: powerwall_export
+
+probe_tariff_write:
+  name: Test tariff write (05:30 to 05:31)
+  description: Preview or change the existing 05:30 boundary by one minute in both buy and sell tariffs, and restore the original within three minutes. Never changes mode, reserve or grid charging. Supervise the first test.
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: powerwall_export
+    dry_run:
+      default: true
+      selector:
+        boolean:
