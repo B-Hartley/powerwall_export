@@ -151,6 +151,13 @@ def tariff_matches(actual: dict, expected: dict) -> bool:
     except ExportError:
         return False
     keys = ("currency", "seasons", "energy_charges", "demand_charges", "daily_charges", "daily_demand_charges", "monthly_charges", "monthly_minimum_bill", "min_applicable_demand", "max_applicable_demand")
+    # Tesla removes zero-date, empty placeholder seasons from its write/read
+    # representation. Compare active, validated write content instead.
+    try:
+        actual = write_tariff(actual)
+        expected = write_tariff(expected)
+    except ExportError:
+        return False
     for left, right in ((actual, expected), (actual["sell_tariff"], expected["sell_tariff"])):
         if _sorted({k: left[k] for k in keys}) != _sorted({k: right[k] for k in keys}):
             return False
