@@ -135,3 +135,25 @@ async def test_parent_unavailable_fails_closed(bridge):
     with pytest.raises(ExportError,match='not loaded'):
         await module.SharedClient(hass,'parent','123456').info()
     api.site_info.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_write_http_status_sanitized_and_classified(bridge):
+    module,state=bridge
+    hass,entry,site,api,entries=make_hass(state)
+    class Forbidden(RuntimeError):
+        status = 403
+    api.time_of_use_settings.side_effect=Forbidden('Authorization: Bearer SUPER_SECRET')
+    with pytest.raises(ExportError, match='HTTP 403') as err:
+        await module.SharedClient(hass,'parent','123456').set_tariff(base_tariff())
+    assert 'SUPER_SECRET' not in str(err.value)
+    assert 'permission' in str(err.value)
+
+
+@pytest.mark.asyncio
+async def test_write_http_status_unavailable_does_not_leak(bridge):
+    module,state=bridge
+    hass,entry,site,api,entries=make_hass(state)
+    api.time_of_use_settings.side_effect=RuntimeError('Authorization: Bearer SUPER_SECRET')
+    with pytest.raises(ExportError, match='status unavailable') as err:
+        await module.SharedClient(hass,'parent','123456').set_tariff(base_tariff())
+    assert 'SUPER_SECRET' not in str(err.value)
