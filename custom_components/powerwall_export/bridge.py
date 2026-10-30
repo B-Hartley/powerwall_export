@@ -103,25 +103,48 @@ class SharedClient:
 
     @staticmethod
     def _ack(response: Any) -> None:
-        if not isinstance(response, dict) or response.get("error"):
-            raise ExportError("Tesla rejected the write or returned an invalid acknowledgement.")
-        body = response.get("response", response)
-        if body is True:
-            return
-        if not isinstance(body, dict) or body.get("error") or body.get("result") is False:
-            raise ExportError("Tesla rejected the write.")
-        code = body.get("code")
-        if code is not None:
-            try:
-                if 200 <= int(code) < 300:
-                    return
-            except (ValueError, TypeError):
-                pass
-            raise ExportError("Tesla returned an unsuccessful command code.")
-        if body.get("result") is True:
-            return
-        raise ExportError("Tesla returned an unrecognised write acknowledgement; read-back/recovery is required.")
+        """Accept only explicit success; describe rejections without raw API data.
 
+        Do not disclose arbitrary reason/message/error fields: third-party
+        responses may include identifiers or request metadata.
+        """
+        if not isinstance(response, dict):
+            raise ExportError("Tesla command acknowledgement missing or not an object.")
+        body = response.get("response", response)
+        if body is True and not response.get("error"):
+            return
+        if not isinstance(body, dict):
+            raise ExportError("Tesla command returned no recognised acknowledgement body.")
+        code = body.get("code")
+        if code is None:
+            code = response.get("code")
+        http_code = None
+        if isinstance(code, int) and not isinstance(code, bool) and 100 <= code <= 599:
+            http_code = code
+        elif isinstance(code, str) and code.isdecimal() and len(code) == 3:
+            parsed = int(code)
+            if 100 <= parsed <= 599:
+                http_code = parsed
+        result = body.get("result")
+        has_error = bool(response.get("error")) or bool(body.get("error"))
+        if has_error or result is False or (http_code is not None and http_code >= 400):
+            details = []
+            if http_code is not None:
+                details.append(f"command code {http_code}")
+            if result is False:
+                details.append("result=false")
+            if has_error:
+                details.append("error field present")
+            if not details:
+                details.append("negative acknowledgement")
+            raise ExportError("Tesla rejected the write (" + ", ".join(details) + ").")
+        if http_code is not None and 200 <= http_code < 300:
+            return
+        if result is True:
+            return
+        # Do not assume success on an empty or undocumented response.
+        raise ExportError("Tesla returned an unrecognised write acknowledgement (no positive result/code).")
+ 
     async def info(self) -> dict:
         return self._read_response(await self._call("site_info"))
 
