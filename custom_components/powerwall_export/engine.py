@@ -242,7 +242,23 @@ class Engine:
                             if (period.get("toHour"), period.get("toMinute")) == (5, 30):
                                 shifts.append((period, "toMinute"))
                     if len(shifts) != 2:
-                        raise ExportError("Expected exactly two matching 05:30 boundaries per active season. No write.")
+                        boundaries = {}
+                        for block in blocks.values():
+                            for period in block.get("periods", []):
+                                for prefix in ("from", "to"):
+                                    hour, minute = period.get(prefix + "Hour"), period.get(prefix + "Minute")
+                                    if isinstance(hour, int) and isinstance(minute, int):
+                                        key = f"{hour:02d}:{minute:02d}"
+                                        boundaries[key] = boundaries.get(key, 0) + 1
+                        options = ", ".join(
+                            f"{key} ({count})" for key, count in sorted(boundaries.items())
+                            if count >= 2
+                        ) or "none"
+                        raise ExportError(
+                            f"Tariff probe: {side_label}/{season_name} has {len(shifts)} "
+                            f"05:30 boundaries (expected exactly 2). "
+                            f"Other repeated boundaries: {options}. No write."
+                        )
                     for period, field in shifts:
                         period[field] = 31
                     changes[side_label + "." + season_name] = len(shifts)
