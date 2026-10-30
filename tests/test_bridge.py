@@ -170,3 +170,21 @@ def test_rejection_provides_safe_response_shape(bridge, response, part):
         module.SharedClient._ack(response)
     assert part in str(err.value)
     assert "PRIVATE_TOKEN" not in str(err.value)
+
+
+def test_write_tariff_removes_empty_winter_placeholder(bridge):
+    module, _ = bridge
+    tariff = base_tariff()
+    for side in (tariff, tariff["sell_tariff"]):
+        side["seasons"]["Winter"] = {
+            "fromMonth": 0, "fromDay": 0, "toMonth": 0, "toDay": 0,
+            "tou_periods": {},
+        }
+        side["energy_charges"]["Winter"] = {"rates": {}}
+        side["demand_charges"]["Winter"] = {"rates": {}}
+    result = module.write_tariff(tariff)
+    assert "Winter" not in result["seasons"]
+    assert "Winter" not in result["sell_tariff"]["seasons"]
+    assert "Winter" not in result["energy_charges"]
+    assert "Winter" not in result["sell_tariff"]["energy_charges"]
+    assert result["seasons"]["All year"]["fromMonth"] == 1
