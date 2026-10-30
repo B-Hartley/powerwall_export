@@ -166,9 +166,30 @@ class SharedClient:
         # Some parent API versions return None after a completed command.
         # Treat absence of an acknowledgement as UNKNOWN, not success or
         # rejection. Every engine write path verifies the live tariff read-back.
-        if response is None or (isinstance(response, dict) and response.get("response") is None and "response" in response and not response.get("error")):
+        if response is None:
             return
-        self._ack(response)
+        if isinstance(response, bool):
+            if response is False:
+                raise ExportError("Tesla tariff write returned explicit false.")
+            return
+        if not isinstance(response, dict):
+            # A non-dict result is ambiguous; verification belongs to engine.
+            return
+        if response.get("error"):
+            self._ack(response)
+        body = response.get("response", response)
+        if body is False:
+            raise ExportError("Tesla tariff write response=false.")
+        if body is None:
+            return
+        if isinstance(body, dict):
+            if (body.get("error") or body.get("result") is False
+                or "code" in body or "result" in body):
+                self._ack(response)
+            # Unknown dictionary: rely on mandatory read-back.
+            return
+        # Undocumented, non-boolean body: never claim success without read-back.
+        return
 
     async def mode(self, value: str) -> None:
         self._ack(await self._call("operation", value))
