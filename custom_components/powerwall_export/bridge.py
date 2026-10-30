@@ -162,7 +162,13 @@ class SharedClient:
         return extract_tariff(self._read_response(response))
 
     async def set_tariff(self, value: dict) -> None:
-        self._ack(await self._call("time_of_use_settings", write_tariff(value)))
+        response = await self._call("time_of_use_settings", write_tariff(value))
+        # Some parent API versions return None after a completed command.
+        # Treat absence of an acknowledgement as UNKNOWN, not success or
+        # rejection. Every engine write path verifies the live tariff read-back.
+        if response is None or (isinstance(response, dict) and response.get("response") is None and "response" in response and not response.get("error")):
+            return
+        self._ack(response)
 
     async def mode(self, value: str) -> None:
         self._ack(await self._call("operation", value))
