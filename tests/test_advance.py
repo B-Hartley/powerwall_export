@@ -17,7 +17,7 @@ def rate_at(tariff, moment, selling=False):
                 for p in block['periods']:
                     a=p['fromHour']*60+p['fromMinute']
                     b=p['toHour']*60+p['toMinute'] or 1440
-                    if p["fromDayOfWeek"] <= ((moment.weekday()+1)%7) <= p["toDayOfWeek"] and a<=minute<b:
+                    if p["fromDayOfWeek"] <= moment.weekday() <= p["toDayOfWeek"] and a<=minute<b:
                         found.append(side['energy_charges'][key]['rates'][label])
     assert len(found)==1,(moment,found)
     return found[0]
@@ -45,11 +45,11 @@ def test_preserves_distinct_weekday_and_weekend_tariffs():
         season=side['seasons']['All year']
         for block in season['tou_periods'].values():
             for p in block['periods']:
-                p['fromDayOfWeek']=1
-                p['toDayOfWeek']=5
+                p['fromDayOfWeek']=0
+                p['toDayOfWeek']=4
         # Saturday/Sunday entirely off-peak, unlike weekdays.
         season['tou_periods']['OFF_PEAK']['periods'].append({
-            'fromDayOfWeek':0,'toDayOfWeek':0,'fromHour':0,'fromMinute':0,'toHour':0,'toMinute':0})
+            'fromDayOfWeek':5,'toDayOfWeek':5,'fromHour':0,'fromMinute':0,'toHour':0,'toMinute':0})
         season['tou_periods']['OFF_PEAK']['periods'].append({
             'fromDayOfWeek':6,'toDayOfWeek':6,'fromHour':0,'fromMinute':0,'toHour':0,'toMinute':0})
     original=deepcopy(t)
