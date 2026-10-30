@@ -287,8 +287,11 @@ class Engine:
             except (Exception, asyncio.CancelledError) as exc:
                 self._state("restore_pending", "Tariff write probe failed at " + stage + "; restoring saved original.")
                 restored = await self._restore_unlocked("tariff write probe failed")
-                raise ExportError("Tariff write probe failed at " + stage + " (" + type(exc).__name__ +
-                                  "). " + ("Original confirmed restored." if restored else "Recovery pending; run Diagnose pending recovery.")) from None
+                # Preserve safe details from the original failure. A generic
+                # ExportError label hid useful HTTP 400/403/422 distinctions.
+                cause = str(exc) if isinstance(exc, ExportError) else type(exc).__name__
+                raise ExportError("Tariff write probe failed at " + stage + ": " + cause +
+                                  ". " + ("Original confirmed restored." if restored else "Recovery pending; run Diagnose pending recovery.")) from None
 
     async def start(self, duration_minutes: int = 30, reserve_percent: float | None = None,
                     end_time: datetime | None = None) -> dict:
