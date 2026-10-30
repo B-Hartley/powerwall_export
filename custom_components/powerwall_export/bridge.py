@@ -14,7 +14,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
 from .const import SOURCE_DOMAINS
-from .tariff import ExportError, extract_tariff
+from .tariff import ExportError, extract_tariff, write_tariff
 
 
 @dataclass(frozen=True)
@@ -162,7 +162,7 @@ class SharedClient:
         return extract_tariff(self._read_response(response))
 
     async def set_tariff(self, value: dict) -> None:
-        self._ack(await self._call("time_of_use_settings", value))
+        self._ack(await self._call("time_of_use_settings", write_tariff(value)))
 
     async def mode(self, value: str) -> None:
         self._ack(await self._call("operation", value))
