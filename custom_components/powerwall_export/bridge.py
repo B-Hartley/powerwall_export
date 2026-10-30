@@ -77,9 +77,20 @@ class SharedClient:
         except ExportError:
             raise
         except Exception as exc:
-            # Third-party exceptions can contain HTTP request details: do not
-            # log/return their raw text, headers, URL parameters or credentials.
-            raise ExportError(f"{name} failed ({type(exc).__name__}). Check the parent integration, energy-control permission and Tesla availability.") from None
+            # Never expose third-party exception text: it can contain bearer
+            # tokens or request URLs. Expose only validated numeric HTTP status.
+            status = getattr(exc, "status", None)
+            if status is None:
+                status = getattr(exc, "status_code", None)
+            if isinstance(status, int) and not isinstance(status, bool) and 100 <= status <= 599:
+                category = {400: "bad-request/payload", 401: "authentication",
+                            403: "scope or energy-product permission",
+                            404: "endpoint or site unavailable",
+                            409: "conflicting request",
+                            422: "tariff validation",
+                            429: "rate limit"}.get(status, "server/transport" if status >= 500 else "HTTP error")
+                raise ExportError(f"{name}: HTTP {status} ({category}); {type(exc).__name__}.") from None
+            raise ExportError(f"{name}: {type(exc).__name__}; HTTP status unavailable. Check Tessie and Tesla command logs.") from None
 
     @staticmethod
     def _read_response(response: Any) -> dict:
