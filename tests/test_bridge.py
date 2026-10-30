@@ -157,3 +157,16 @@ async def test_write_http_status_unavailable_does_not_leak(bridge):
     with pytest.raises(ExportError, match='status unavailable') as err:
         await module.SharedClient(hass,'parent','123456').set_tariff(base_tariff())
     assert 'SUPER_SECRET' not in str(err.value)
+
+
+@pytest.mark.parametrize("response,part", [
+    ({"response": {"result": False}}, "result=false"),
+    ({"response": {"code": 422, "result": False}}, "command code 422"),
+    ({"response": {"error": "Bearer PRIVATE_TOKEN"}}, "error field present"),
+])
+def test_rejection_provides_safe_response_shape(bridge, response, part):
+    module, _ = bridge
+    with pytest.raises(ExportError) as err:
+        module.SharedClient._ack(response)
+    assert part in str(err.value)
+    assert "PRIVATE_TOKEN" not in str(err.value)
