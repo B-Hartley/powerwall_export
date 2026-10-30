@@ -82,6 +82,59 @@ def normalize_tariff(raw: dict, currency: str = "GBP") -> dict:
     return result
 
 
+def write_tariff(raw: dict) -> dict:
+    """Build a fresh Tesla v2 write payload from a normalized read tariff.
+
+    Inactive placeholder seasons (often zero-filled Winter) are only excluded
+    when an active season fully covers the year. Never invent or silently
+    change price periods; reject unsafe / unfamiliar schedules.
+    """
+    source = normalize_tariff(raw)
+    allowed = ("version", "utility", "code", "name", "currency",
+               "monthly_minimum_bill", "monthly_charges", "min_applicable_demand",
+               "max_applicable_demand", "daily_charges", "daily_demand_charges",
+               "demand_charges", "energy_charges", "seasons")
+    def side_write(side: dict) -> dict:
+        seasons = side["seasons"]
+        active = {}
+        for key, season in seasons.items():
+            dates = (season.get("fromMonth"), season.get("fromDay"),
+                     season.get("toMonth"), season.get("toDay"))
+            if all(isinstance(v, int) and v > 0 for v in dates):
+                active[key] = deepcopy(season)
+            elif (dates == (0, 0, 0, 0)
+                  and not season.get("tou_periods")
+                  and not side["energy_charges"].get(key, {}).get("rates")):
+                continue
+            else:
+                raise ExportError("Unsupported inactive or incomplete tariff season. No write.")
+        if not active:
+            raise ExportError("No active tariff seasons. No write.")
+        # Check every calendar date has exactly one valid season.
+        from datetime import date, timedelta
+        date0 = date(2000, 1, 1)
+        for i in range(366):
+            day = date0 + timedelta(days=i)
+            md = (day.month, day.day)
+            found = 0
+            for season in active.values():
+                lo = (season["fromMonth"], season["fromDay"])
+                hi = (season["toMonth"], season["toDay"])
+                if lo <= md <= hi if lo <= hi else (md >= lo or md <= hi):
+                    found += 1
+            if found != 1:
+                raise ExportError("Tariff seasons overlap or do not cover the year. No write.")
+        output = {key: deepcopy(side[key]) for key in allowed if key in side}
+        output["seasons"] = active
+        for field in ("energy_charges", "demand_charges"):
+            output[field] = {k: deepcopy(v) for k, v in side[field].items()
+                             if k == "ALL" or k in active}
+        return output
+    output = side_write(source)
+    output["sell_tariff"] = side_write(source["sell_tariff"])
+    return output
+
+
 def _sorted(value: Any) -> Any:
     if isinstance(value, dict):
         return {k: _sorted(v) for k, v in sorted(value.items())}
