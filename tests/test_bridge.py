@@ -216,3 +216,23 @@ def test_inert_season_is_ignored_by_effective_tariff_comparison(bridge):
     assert module.write_tariff(with_winter) == module.write_tariff(without)
     from pwe_under_test.tariff import tariff_matches
     assert tariff_matches(with_winter, without)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ack", [{"response": "queued"}, {"response": {}}, {"response": None}, "queued"])
+async def test_ambiguous_tariff_ack_goes_to_readback(bridge, ack):
+    module, state = bridge
+    hass, entry, site, api, entries = make_hass(state)
+    api.time_of_use_settings.return_value = ack
+    await module.SharedClient(hass, "parent", "123456").set_tariff(base_tariff())
+    api.time_of_use_settings.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ack", [{"response": False}, {"response": {"result": False}}, {"error": "rejected"}])
+async def test_explicit_tariff_failure_remains_rejected(bridge, ack):
+    module, state = bridge
+    hass, entry, site, api, entries = make_hass(state)
+    api.time_of_use_settings.return_value = ack
+    with pytest.raises(ExportError):
+        await module.SharedClient(hass, "parent", "123456").set_tariff(base_tariff())
