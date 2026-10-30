@@ -376,8 +376,9 @@ class Engine:
                 return {"pending": False, "message": "No recovery snapshot exists."}
             snap = self.snapshot
             original = snap["tariff"]
-            current = normalize_tariff(await self.api.tariff())
-            expected = normalize_tariff(original)
+            from .tariff import write_tariff
+            current = write_tariff(await self.api.tariff())
+            expected = write_tariff(original)
             current_info = settings(await self.api.info())
             differences = {}
             # Show exact safe mismatch categories without exposing a full site ID.
