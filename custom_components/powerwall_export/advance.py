@@ -76,8 +76,8 @@ def _overlay_side(side, day, start_minute, end_minute, event_price):
     key = matching[0]
     original = seasons[key]
     # Expand all weekday ranges to independent days before modifying only the
-    # event weekday. Tesla uses Sunday=0 ... Saturday=6; Python Monday=0.
-    event_dow=(day.weekday()+1)%7
+    # event weekday. Tesla uses Monday=0 ... Sunday=6, matching Python weekday().
+    event_dow=day.weekday()
     by_day={dow:[] for dow in range(7)}
     for label,block in original['tou_periods'].items():
         if label not in side['energy_charges'][key]['rates']:
