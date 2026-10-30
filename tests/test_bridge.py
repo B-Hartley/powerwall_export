@@ -82,7 +82,7 @@ async def test_write_passes_tariff_not_double_wrapped(bridge):
     client=module.SharedClient(hass,'parent','123456')
     tariff=base_tariff()
     await client.set_tariff(tariff)
-    api.time_of_use_settings.assert_awaited_once_with(tariff)
+    api.time_of_use_settings.assert_awaited_once_with(module.write_tariff(tariff))
 
 
 @pytest.mark.asyncio
