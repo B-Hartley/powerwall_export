@@ -188,3 +188,31 @@ def test_write_tariff_removes_empty_winter_placeholder(bridge):
     assert "Winter" not in result["energy_charges"]
     assert "Winter" not in result["sell_tariff"]["energy_charges"]
     assert result["seasons"]["All year"]["fromMonth"] == 1
+
+
+@pytest.mark.asyncio
+async def test_empty_tariff_write_ack_requires_engine_readback(bridge):
+    module, state = bridge
+    hass, entry, site, api, entries = make_hass(state)
+    api.time_of_use_settings.return_value = None
+    await module.SharedClient(hass, "parent", "123456").set_tariff(base_tariff())
+    api.time_of_use_settings.assert_awaited_once()
+
+
+def test_inert_season_is_ignored_by_effective_tariff_comparison(bridge):
+    module, _ = bridge
+    from copy import deepcopy
+    with_winter = base_tariff()
+    for side in (with_winter, with_winter["sell_tariff"]):
+        side["seasons"]["Winter"] = {"fromMonth": 0, "fromDay": 0,
+                                      "toMonth": 0, "toDay": 0, "tou_periods": {}}
+        side["energy_charges"]["Winter"] = {"rates": {}}
+        side["demand_charges"]["Winter"] = {"rates": {}}
+    without = deepcopy(with_winter)
+    for side in (without, without["sell_tariff"]):
+        side["seasons"].pop("Winter")
+        side["energy_charges"].pop("Winter")
+        side["demand_charges"].pop("Winter")
+    assert module.write_tariff(with_winter) == module.write_tariff(without)
+    from pwe_under_test.tariff import tariff_matches
+    assert tariff_matches(with_winter, without)
