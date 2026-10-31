@@ -31,9 +31,7 @@ async def async_setup(hass, config):
         if entry is None or entry.domain != DOMAIN or entry.state is not ConfigEntryState.LOADED or not isinstance(runtime, Runtime):
             raise HomeAssistantError("Select a loaded Powerwall Export integration entry.")
         kwargs = {}
-        if call.service in ("start_export", "prepare_session", "probe_tariff_write"):
-            if call.service == "probe_tariff_write":
-                kwargs = {"dry_run": call.data.get("dry_run", True)}
+        if call.service in ("start_export", "prepare_session"):
             if call.service == "prepare_session":
                 kwargs = {k: v for k, v in call.data.items() if k != "config_entry_id"}
                 for key in ("start_time", "end_time"):
@@ -51,9 +49,9 @@ async def async_setup(hass, config):
         result = await runtime.run(call.service, **kwargs)
         return result if call.return_response else None
 
-    for name in ("check_setup", "start_export", "stop_export", "prepare_session", "get_tariff", "reconcile_recovery", "confirm_recovery", "probe_tariff_write"):
+    for name in ("check_setup", "start_export", "stop_export", "prepare_session", "get_tariff", "reconcile_recovery", "confirm_recovery"):
         hass.services.async_register(DOMAIN, name, handle,
-                                     schema=START_SCHEMA if name == "start_export" else PREPARE_SCHEMA if name == "prepare_session" else vol.Schema({**BASE, vol.Optional("dry_run", default=True): cv.boolean}) if name == "probe_tariff_write" else vol.Schema(BASE),
+                                     schema=START_SCHEMA if name == "start_export" else PREPARE_SCHEMA if name == "prepare_session" else vol.Schema(BASE),
                                      supports_response=SupportsResponse.OPTIONAL)
     return True
 
