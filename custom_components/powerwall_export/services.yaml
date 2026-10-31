@@ -74,6 +74,29 @@ prepare_session:
       default: false
       selector:
         boolean:
+    minimum_end_charge:
+      description: Minimum battery charge at session end, percent. Default 60.
+      default: 60
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+    charge_margin:
+      description: Extra charge margin above the minimum; default 5 percent.
+      default: 5
+      selector:
+        number:
+          min: 0
+          max: 30
+          step: 1
+          unit_of_measurement: "%"
+    enforce_reserve:
+      description: Temporarily set Tesla backup reserve to the protected charge threshold, then restore the original reserve after the session. Default off.
+      default: false
+      selector:
+        boolean:
 
 get_tariff:
   name: Get current tariff (read only)
