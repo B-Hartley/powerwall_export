@@ -155,7 +155,9 @@ class Engine:
             start = start_time.astimezone(timezone.utc)
             end = end_time.astimezone(timezone.utc)
             if not timedelta(minutes=10) <= start - now <= timedelta(days=2):
-                raise ExportError("Session must start 10 minutes to 48 hours from now.")
+                raise ExportError("Session preview must start 10 minutes to 48 hours from now.")
+            if not dry_run and start - now > timedelta(hours=1):
+                raise ExportError("Live preparation is limited to the final 60 minutes before the session. Preview earlier using dry_run.")
             if not timedelta(minutes=1) <= end - start <= timedelta(hours=6):
                 raise ExportError("Session duration must be between 1 minute and 6 hours.")
             info, original, tariff, live = await self._read()
