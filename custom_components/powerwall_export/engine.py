@@ -175,13 +175,15 @@ class Engine:
             reported_zone = info.get("installation_time_zone")
             if reported_zone and reported_zone != self.time_zone:
                 raise ExportError("Powerwall time zone does not match integration configuration.")
-            if block_grid_charging and not isinstance(original["disallow_grid_charge"], bool):
-                raise ExportError("Cannot read grid charging setting; refusing to change it.")
+            if block_grid_charging and not dry_run and not isinstance(original["disallow_grid_charge"], bool):
+                raise ExportError("Cannot read grid charging setting; refusing to change it. Try dry_run or disable block_grid_charging.")
             temporary = build_advance_tariff(tariff, start, end, self.time_zone)
             response = {"start": start.isoformat(), "end": end.isoformat(),
                         "original_tariff": tariff.get("name"), "mode_unchanged": True,
                         "reserve_unchanged": True, "grid_charging_unchanged": not block_grid_charging,
                         "grid_charging_block_requested": bool(block_grid_charging),
+                        "grid_charging_setting_readable": isinstance(original["disallow_grid_charge"], bool),
+                        "grid_charging_block_safe": not block_grid_charging or isinstance(original["disallow_grid_charge"], bool),
                         "minimum_end_charge_percent": minimum_end_charge,
                         "charge_margin_percent": charge_margin,
                         "protected_charge_percent": charge_floor,
