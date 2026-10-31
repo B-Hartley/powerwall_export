@@ -144,7 +144,7 @@ class Engine:
             self._state("ready", "Read-only checks passed. No Powerwall settings changed; write permission is not yet tested.")
             return deepcopy(self.last_check)
 
-    async def prepare(self, start_time: datetime, end_time: datetime, dry_run: bool = True, block_grid_charging: bool = False) -> dict:
+    async def prepare(self, start_time: datetime, end_time: datetime, dry_run: bool = True, block_grid_charging: bool = False, minimum_end_charge: float = 60, charge_margin: float = 5, enforce_reserve: bool = False) -> dict:
         """Save a future one-day TOU window, leaving mode, reserve and grid alone."""
         async with self.lock:
             if self.snapshot:
@@ -161,6 +161,15 @@ class Engine:
             if not timedelta(minutes=1) <= end - start <= timedelta(hours=6):
                 raise ExportError("Session duration must be between 1 minute and 6 hours.")
             info, original, tariff, live = await self._read()
+            minimum_end_charge = number(minimum_end_charge, "Minimum end charge", 0, 100)
+            charge_margin = number(charge_margin, "Charge safety margin", 0, 30)
+            charge_floor = max(original["reserve"], minimum_end_charge + charge_margin)
+            if charge_floor > 100:
+                raise ExportError("Minimum end charge plus margin exceeds 100%; no write.")
+            battery_charge = number(live.get("percentage_charged"), "Battery state of charge")
+            eligible = battery_charge > charge_floor + 2
+            if not eligible and not dry_run:
+                raise ExportError("Insufficient battery charge above protected minimum plus 2% headroom. Session skipped.")
             if original["mode"] != "autonomous":
                 raise ExportError("Advance test requires Powerwall already in Savings / Time-Based Control. No changes made.")
             reported_zone = info.get("installation_time_zone")
@@ -173,6 +182,12 @@ class Engine:
                         "original_tariff": tariff.get("name"), "mode_unchanged": True,
                         "reserve_unchanged": True, "grid_charging_unchanged": not block_grid_charging,
                         "grid_charging_block_requested": bool(block_grid_charging),
+                        "minimum_end_charge_percent": minimum_end_charge,
+                        "charge_margin_percent": charge_margin,
+                        "protected_charge_percent": charge_floor,
+                        "battery_charge_percent": battery_charge,
+                        "eligible_to_start": eligible,
+                        "reserve_enforcement_requested": bool(enforce_reserve),
                         "temporary_buy_price_gbp_per_kwh": 2.10,
                         "temporary_sell_price_gbp_per_kwh": 2.00,
                         "dry_run": bool(dry_run), "written": False}
@@ -186,9 +201,12 @@ class Engine:
             snap = {"schema": 1, "site_id": self.site_id, "started_at": now.isoformat(),
                     "end_at": end.isoformat(), "original": original, "tariff": tariff,
                     "temporary_tariff": temporary, "target_reserve": original["reserve"],
-                    "override_reserve": False, "time_zone": self.time_zone,
+                    "time_zone": self.time_zone,
                     "tariff_only": True, "event_start_at": start.isoformat(),
-                    "grid_block_requested": bool(block_grid_charging)}
+                    "grid_block_requested": bool(block_grid_charging),
+                    "min_charge_floor": charge_floor,
+                    "reserve_enforcement_requested": bool(enforce_reserve),
+                    "override_reserve": bool(enforce_reserve and charge_floor != original["reserve"])}
             self.snapshot = snap
             try:
                 await self._persist()
@@ -204,15 +222,22 @@ class Engine:
                     if attempt == 3:
                         raise ExportError("Prepared tariff read-back mismatch.")
                     await self.sleep(3)
+                if enforce_reserve and charge_floor != original["reserve"]:
+                    await self.api.reserve(charge_floor)
                 if block_grid_charging and original["disallow_grid_charge"] is False:
                     await self.api.grid(True, original["export_rule"])
                 current = settings(await self.api.info())
-                expected = {**original, "disallow_grid_charge": True} if block_grid_charging else original
+                expected = dict(original)
+                if block_grid_charging:
+                    expected["disallow_grid_charge"] = True
+                if enforce_reserve:
+                    expected["reserve"] = charge_floor
                 if current != expected:
                     raise ExportError("Powerwall operating settings did not match requested grid-charging state.")
                 self._state("prepared", "Future tariff confirmed; grid charging blocked temporarily." if block_grid_charging else
                             "Future tariff confirmed; operating settings unchanged.")
                 response["grid_charging_blocked"] = bool(block_grid_charging)
+                response["reserve_enforced"] = bool(enforce_reserve)
                 response.update({"dry_run": False, "written": True})
                 return response
             except (Exception, asyncio.CancelledError) as exc:
@@ -395,8 +420,11 @@ class Engine:
                     if snap.get("grid_block_requested") and current["disallow_grid_charge"] != original["disallow_grid_charge"]:
                         await self.api.grid(original["disallow_grid_charge"], original["export_rule"])
                         current = settings(await self.api.info())
+                    if snap.get("reserve_enforcement_requested") and current["reserve"] != original["reserve"]:
+                        await self.api.reserve(original["reserve"])
+                        current = settings(await self.api.info())
                     if current != original:
-                        failures.append("operating settings or grid charging not restored")
+                        failures.append("operating settings, reserve or grid charging not restored")
                 except Exception:
                     failures.append("operating settings or grid charging read-back")
         else:
@@ -476,6 +504,19 @@ class Engine:
                 return
             if self.snapshot.get("tariff_only"):
                 event_start = datetime.fromisoformat(self.snapshot["event_start_at"])
+                if self.snapshot.get("min_charge_floor") is not None:
+                    try:
+                        live = await self.api.live()
+                        charge = safe_live(live, now)
+                        if charge <= self.snapshot["min_charge_floor"]:
+                            await self._restore_unlocked("minimum end-of-session charge reached")
+                            return
+                        self.live_failures = 0
+                    except ExportError:
+                        self.live_failures += 1
+                        if self.live_failures >= 2:
+                            await self._restore_unlocked("battery monitoring unavailable")
+                            return
                 self._state("prepared" if now < event_start else "active",
                             "Prepared tariff installed; no mode/reserve/grid changes. Export is not guaranteed.")
                 return
