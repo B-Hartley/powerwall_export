@@ -144,7 +144,7 @@ class Engine:
             self._state("ready", "Read-only checks passed. No Powerwall settings changed; write permission is not yet tested.")
             return deepcopy(self.last_check)
 
-    async def prepare(self, start_time: datetime, end_time: datetime, dry_run: bool = True) -> dict:
+    async def prepare(self, start_time: datetime, end_time: datetime, dry_run: bool = True, block_grid_charging: bool = False) -> dict:
         """Save a future one-day TOU window, leaving mode, reserve and grid alone."""
         async with self.lock:
             if self.snapshot:
@@ -166,10 +166,13 @@ class Engine:
             reported_zone = info.get("installation_time_zone")
             if reported_zone and reported_zone != self.time_zone:
                 raise ExportError("Powerwall time zone does not match integration configuration.")
+            if block_grid_charging and not isinstance(original["disallow_grid_charge"], bool):
+                raise ExportError("Cannot read grid charging setting; refusing to change it.")
             temporary = build_advance_tariff(tariff, start, end, self.time_zone)
             response = {"start": start.isoformat(), "end": end.isoformat(),
                         "original_tariff": tariff.get("name"), "mode_unchanged": True,
-                        "reserve_unchanged": True, "grid_charging_unchanged": True,
+                        "reserve_unchanged": True, "grid_charging_unchanged": not block_grid_charging,
+                        "grid_charging_block_requested": bool(block_grid_charging),
                         "temporary_buy_price_gbp_per_kwh": 2.10,
                         "temporary_sell_price_gbp_per_kwh": 2.00,
                         "dry_run": bool(dry_run), "written": False}
@@ -184,7 +187,8 @@ class Engine:
                     "end_at": end.isoformat(), "original": original, "tariff": tariff,
                     "temporary_tariff": temporary, "target_reserve": original["reserve"],
                     "override_reserve": False, "time_zone": self.time_zone,
-                    "tariff_only": True, "event_start_at": start.isoformat()}
+                    "tariff_only": True, "event_start_at": start.isoformat(),
+                    "grid_block_requested": bool(block_grid_charging)}
             self.snapshot = snap
             try:
                 await self._persist()
@@ -200,11 +204,15 @@ class Engine:
                     if attempt == 3:
                         raise ExportError("Prepared tariff read-back mismatch.")
                     await self.sleep(3)
-                # Verify that only tariff changed; no other control methods are called.
+                if block_grid_charging and original["disallow_grid_charge"] is False:
+                    await self.api.grid(True, original["export_rule"])
                 current = settings(await self.api.info())
-                if current != original:
-                    raise ExportError("Powerwall operating settings unexpectedly changed.")
-                self._state("prepared", "Future tariff confirmed; Savings mode, reserve and grid settings unchanged. Check Tesla app schedule.")
+                expected = {**original, "disallow_grid_charge": True} if block_grid_charging else original
+                if current != expected:
+                    raise ExportError("Powerwall operating settings did not match requested grid-charging state.")
+                self._state("prepared", "Future tariff confirmed; grid charging blocked temporarily." if block_grid_charging else
+                            "Future tariff confirmed; operating settings unchanged.")
+                response["grid_charging_blocked"] = bool(block_grid_charging)
                 response.update({"dry_run": False, "written": True})
                 return response
             except (Exception, asyncio.CancelledError) as exc:
@@ -362,7 +370,8 @@ class Engine:
         self._state("restoring", f"Restoring original settings: {reason}.")
         failures: list[str] = []
         if snap.get("tariff_only"):
-            # Never touch mode, grid charging or reserve for an advance-only session.
+            # Restore tariff first, then original grid permission if this
+            # advance session intentionally blocked charging.
             tariff_ok = False
             try:
                 # Avoid repeated writes when the original tariff is already
@@ -382,10 +391,14 @@ class Engine:
                 failures.append("original tariff read-back; use reconcile_recovery diagnostics")
             else:
                 try:
-                    if settings(await self.api.info()) != original:
-                        failures.append("operating settings changed externally")
+                    current = settings(await self.api.info())
+                    if snap.get("grid_block_requested") and current["disallow_grid_charge"] != original["disallow_grid_charge"]:
+                        await self.api.grid(original["disallow_grid_charge"], original["export_rule"])
+                        current = settings(await self.api.info())
+                    if current != original:
+                        failures.append("operating settings or grid charging not restored")
                 except Exception:
-                    failures.append("operating settings read-back")
+                    failures.append("operating settings or grid charging read-back")
         else:
             # Stop TBC first. Do not restore grid charging or TBC until normal prices
             # have been read back. Never disable Storm Watch or change export limits.
