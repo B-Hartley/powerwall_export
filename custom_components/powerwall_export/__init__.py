@@ -17,7 +17,10 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 BASE = {vol.Required("config_entry_id"): cv.string}
 PREPARE_SCHEMA = vol.Schema({**BASE, vol.Required("start_time"): cv.string,
     vol.Required("end_time"): cv.string, vol.Optional("dry_run", default=True): cv.boolean,
-    vol.Optional("block_grid_charging", default=False): cv.boolean})
+    vol.Optional("block_grid_charging", default=False): cv.boolean,
+    vol.Optional("minimum_end_charge", default=60): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
+    vol.Optional("charge_margin", default=5): vol.All(vol.Coerce(float), vol.Range(min=0, max=30)),
+    vol.Optional("enforce_reserve", default=False): cv.boolean})
 START_SCHEMA = vol.Schema({**BASE,
     vol.Optional("duration_minutes", default=30): vol.All(vol.Coerce(int), vol.Range(min=5, max=360)),
     vol.Optional("reserve_percent"): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
