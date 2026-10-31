@@ -194,3 +194,51 @@ async def test_prepare_outside_final_hour_preview_only(engine, api):
     with pytest.raises(ExportError, match="final 60 minutes"):
         await engine.prepare(begin, begin + timedelta(minutes=15), dry_run=False, block_grid_charging=True)
     assert api.audit == []
+
+
+@pytest.mark.asyncio
+async def test_skips_when_battery_below_protected_floor(engine, api):
+    api.now = datetime(2026, 10, 26, 17, 0, tzinfo=timezone.utc)
+    api.live_data["timestamp"] = api.now.isoformat()
+    api.live_data["percentage_charged"] = 66
+    start = api.now + timedelta(minutes=30)
+    preview = await engine.prepare(start, start + timedelta(minutes=15), dry_run=True)
+    assert preview["protected_charge_percent"] == 65
+    assert preview["eligible_to_start"] is False
+    with pytest.raises(ExportError, match="Insufficient battery"):
+        await engine.prepare(start, start + timedelta(minutes=15), dry_run=False)
+    assert api.audit == []
+
+
+@pytest.mark.asyncio
+async def test_minimum_end_charge_enforced_and_original_reserve_restored(engine, api):
+    api.now = datetime(2026, 10, 26, 17, 0, tzinfo=timezone.utc)
+    api.live_data["timestamp"] = api.now.isoformat()
+    start = api.now + timedelta(minutes=30)
+    end = start + timedelta(minutes=15)
+    response = await engine.prepare(start, end, dry_run=False,
+                                    minimum_end_charge=60, charge_margin=5,
+                                    enforce_reserve=True)
+    assert response["written"] and response["reserve_enforced"]
+    assert api.info_data["backup_reserve_percent"] == 65
+    api.now = end
+    await engine.tick()
+    assert engine.snapshot is None
+    assert api.info_data["backup_reserve_percent"] == 25
+    assert "reserve:65.0" in api.audit
+    assert "reserve:25.0" in api.audit
+
+
+@pytest.mark.asyncio
+async def test_minimum_charge_watchdog_aborts_early(engine, api):
+    api.now = datetime(2026, 10, 26, 17, 0, tzinfo=timezone.utc)
+    api.live_data["timestamp"] = api.now.isoformat()
+    start = api.now + timedelta(minutes=30)
+    await engine.prepare(start, start + timedelta(minutes=15), dry_run=False)
+    assert engine.snapshot is not None
+    api.now = start + timedelta(minutes=3)
+    api.live_data["timestamp"] = api.now.isoformat()
+    api.live_data["percentage_charged"] = 64
+    await engine.tick()
+    assert engine.snapshot is None
+    assert engine.status == "idle"
