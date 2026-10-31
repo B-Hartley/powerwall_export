@@ -151,3 +151,46 @@ async def test_missing_grid_state_recovery_loads_advance_snapshot(engine,api):
     snap=deepcopy(api.saved[-1])
     engine.load(snap)
     assert engine.snapshot['tariff_only'] is True
+
+
+@pytest.mark.asyncio
+async def test_prepare_optional_grid_block_restores_original_after_end(engine, api):
+    api.now = datetime(2026, 10, 26, 17, 0, tzinfo=timezone.utc)
+    api.live_data["timestamp"] = api.now.isoformat()
+    begin = api.now + timedelta(minutes=30)
+    finish = begin + timedelta(minutes=15)
+    original = deepcopy(api.tariff_data)
+    result = await engine.prepare(begin, finish, dry_run=False, block_grid_charging=True)
+    assert result["written"] is True
+    assert result["grid_charging_blocked"] is True
+    assert api.info_data["components"]["disallow_charge_from_grid_with_solar_installed"] is True
+    assert api.audit == ["save", "tariff", "grid:True"]
+    api.now = finish
+    await engine.tick()
+    assert engine.snapshot is None
+    assert api.tariff_data == original
+    assert api.info_data["components"]["disallow_charge_from_grid_with_solar_installed"] is False
+    assert api.audit == ["save", "tariff", "grid:True", "tariff", "grid:False", "save"]
+
+
+@pytest.mark.asyncio
+async def test_prepare_grid_block_requires_known_original_setting(engine, api):
+    api.now = datetime(2026, 10, 26, 17, 0, tzinfo=timezone.utc)
+    api.live_data["timestamp"] = api.now.isoformat()
+    del api.info_data["components"]["disallow_charge_from_grid_with_solar_installed"]
+    begin = api.now + timedelta(minutes=30)
+    with pytest.raises(ExportError, match="Cannot read grid charging"):
+        await engine.prepare(begin, begin + timedelta(minutes=15), dry_run=False, block_grid_charging=True)
+    assert api.audit == []
+
+
+@pytest.mark.asyncio
+async def test_prepare_outside_final_hour_preview_only(engine, api):
+    api.now = datetime(2026, 10, 26, 17, 0, tzinfo=timezone.utc)
+    api.live_data["timestamp"] = api.now.isoformat()
+    begin = api.now + timedelta(minutes=90)
+    result = await engine.prepare(begin, begin + timedelta(minutes=15), dry_run=True, block_grid_charging=True)
+    assert result["dry_run"] is True
+    with pytest.raises(ExportError, match="final 60 minutes"):
+        await engine.prepare(begin, begin + timedelta(minutes=15), dry_run=False, block_grid_charging=True)
+    assert api.audit == []
