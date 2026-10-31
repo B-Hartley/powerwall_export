@@ -50,7 +50,7 @@ stop_export:
 
 prepare_session:
   name: Prepare future Saving Session (test)
-  description: Preview by default. Optionally write a future tariff window; preserves Savings mode, reserve and grid charging. Restore at end.
+  description: Preview by default. Optionally prepare a tariff within 60 minutes and block grid charging until the end, restoring its original setting after the tariff.
   fields:
     config_entry_id:
       required: true
@@ -67,6 +67,11 @@ prepare_session:
         text:
     dry_run:
       default: true
+      selector:
+        boolean:
+    block_grid_charging:
+      description: Optional. Block grid charging when preparing a session, then restore its previous setting after the session. Does not alter grid export permissions.
+      default: false
       selector:
         boolean:
 
