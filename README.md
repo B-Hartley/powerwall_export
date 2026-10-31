@@ -249,3 +249,17 @@ With your existing Tessie authenticated connection, open **Developer Tools > Act
 - Tesla day-of-week spans `0..6` and overnight intervals are expanded safely for the chosen session date. The original import and export tariff snapshots are preserved for restoration.
 
 The first stage is still a **read-only preview**. Unknown or overlapping tariff structures are rejected rather than guessed. A linked Octopus tariff may be regenerated and replace the temporary schedule: monitor its read-back and never assume it remains effective. This change was tested offline against structural replicas of the two example tariffs, not against Tesla's live API.
+
+### Protect evening battery charge during Saving Sessions
+
+The `prepare_session` action accepts optional battery protection controls:
+
+- `minimum_end_charge: 60` — desired battery percentage to retain at session end.
+- `charge_margin: 5` — safety buffer, giving a default protected floor of 65%.
+- `enforce_reserve: false` — opt in to temporarily raising Tesla's Backup Reserve to the protected floor; the original reserve is saved and restored afterwards.
+- `block_grid_charging: false` — separately opt in to blocking grid charging temporarily, restoring its previous value at the end.
+
+A live session is skipped unless the current battery percentage is more than 2 percentage points above the protected floor. Battery status is checked during preparation and by the watchdog (approximately once a minute). On reaching the floor or repeated monitoring failures, the integration requests early restoration; this is not instantaneous or a guaranteed hard cut-off. A dry run reports `eligible_to_start`, `battery_charge_percent`, and `protected_charge_percent` without writes. Tariff preparation remains limited to the final hour before the session.
+
+The floor is a manually selected percentage, **not yet a forecast of evening demand or guaranteed future charging**. Do not reduce it on the assumption that an extra Intelligent Octopus cheap charging slot will materialise. Grid charging and reserve changes are only made when explicitly enabled.
+
